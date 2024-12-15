@@ -60,7 +60,7 @@ class CustomObjectClassifierWidget(QWidget):
 
         # Classifier filename
         filename_edit = FileEdit(
-            mode=FileDialogMode.EXISTING_FILE,
+            mode=FileDialogMode.OPTIONAL_FILE,
             filter='*.cl',
             value="table_row_classifier.cl")
 
@@ -109,13 +109,11 @@ class CustomObjectClassifierWidget(QWidget):
         show_correlation_matrix_checkbox = QCheckBox("Show correlation matrix")
         show_correlation_matrix_checkbox.setChecked(False)
 
-        # Run container
+        # Run button
         run_container = QWidget()
         run_container.setLayout(QHBoxLayout())
-        train_button = QPushButton("Train")
-        run_container.layout().addWidget(train_button)
-        infer_button = QPushButton("Inference")
-        run_container.layout().addWidget(infer_button)
+        run_button = QPushButton("Run")
+        run_container.layout().addWidget(run_button)
 
         # Update measurements button
         update_container = QWidget()
@@ -138,7 +136,7 @@ class CustomObjectClassifierWidget(QWidget):
         self.layout().addWidget(run_container)
         self.layout().setSpacing(0)
 
-        def train_clicked():
+        def run_clicked():
 
             if self.labels_select.value is None:
                 warnings.warn("No labels image was selected!")
@@ -165,32 +163,7 @@ class CustomObjectClassifierWidget(QWidget):
                 show_correlation_matrix_checkbox.isChecked(),
             )
 
-        train_button.clicked.connect(train_clicked)
-
-        def infer_clicked():
-
-            if self.labels_select.value is None:
-                warnings.warn("No labels image was selected!")
-                return
-
-            if len(self.properties_list.selectedItems()) == 0:
-                warnings.warn("Please select some measurements!")
-                return
-
-            self.run(
-                self.labels_select.value,
-                None,
-                [i.text() for i in self.properties_list.selectedItems()],
-                str(filename_edit.value.absolute()).replace("\\", "/").replace("//", "/"),
-                num_trees_spinner.value(),
-                num_max_depth_spinner.value(),
-                self.custom_name.text(),
-                show_results_as_table.isChecked(),
-                show_classifier_statistics_checkbox.isChecked(),
-                show_correlation_matrix_checkbox.isChecked(),
-            )
-
-        infer_button.clicked.connect(infer_clicked)
+        run_button.clicked.connect(run_clicked)
         update_button.clicked.connect(self.update_properties_list)
 
         # update measurements list when a new labels layer is selected
@@ -240,11 +213,8 @@ class CustomObjectClassifierWidget(QWidget):
         show_classifier_statistics,
         show_correlation_matrix,
     ):
-        mode = 'train' if annotation_layer is not None else 'infer'
-        print(f"Run Custom Object Classifier in {mode} mode")
         print("Selected labels layer: " + str(labels_layer))
-        if mode == 'train':
-            print("Selected annotation layer: " + str(annotation_layer))
+        print("Selected annotation layer: " + str(annotation_layer))
         print("Selected measurements: " + str(selected_measurements_list))
 
         features = get_layer_tabular_data(labels_layer)
@@ -253,19 +223,16 @@ class CustomObjectClassifierWidget(QWidget):
         selected_properties = features[selected_measurements_list]
         print("selected properties", selected_properties)
 
+        # determine annotation classes
+        from skimage.measure import regionprops
+        annotation_stats = regionprops(labels_layer.data, intensity_image=annotation_layer.data)
+
+        annotated_classes = np.asarray([s.max_intensity for s in annotation_stats])
+        print("annotated classes", annotated_classes)
+
         import apoc
         classifier = apoc.TableRowClassifier(opencl_filename=classifier_filename, max_depth=max_depth, num_ensembles=num_trees)
-
-        if mode == 'train':
-            # determine annotation classes
-            from skimage.measure import regionprops
-            annotation_stats = regionprops(labels_layer.data, intensity_image=annotation_layer.data)
-
-            annotated_classes = np.asarray([s.max_intensity for s in annotation_stats])
-            print("annotated classes", annotated_classes)
-
-            classifier.train(selected_properties, annotated_classes)
-
+        classifier.train(selected_properties, annotated_classes)
         prediction = np.asarray(classifier.predict(selected_properties)).tolist()
         print("RFC predictions finished.")
 
